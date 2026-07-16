@@ -1,11 +1,9 @@
 import { useState } from 'react'
 import { Download, Upload, Database } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { supabase } from '../../lib/supabaseClient'
+import { store } from '../../lib/store'
 import { useAuth } from '../../context/AuthContext'
 import PageHeader from '../../components/PageHeader'
-
-const BACKUP_TABLES = ['madrasas', 'teachers', 'classes', 'students', 'assessment_periods', 'instruments', 'instrument_items']
 
 export default function BackupRestore() {
   const { profile } = useAuth()
@@ -13,17 +11,21 @@ export default function BackupRestore() {
   const [exporting, setExporting] = useState(false)
   const [importing, setImporting] = useState(false)
 
-  const handleExport = async () => {
+  const handleExport = () => {
     setExporting(true)
     try {
+      const allData = store.exportAll()
+      // Filter by madrasah_id if not super admin
       const backup = {}
-      for (const table of BACKUP_TABLES) {
-        let query = supabase.from(table).select('*')
-        if (table !== 'madrasas') query = query.eq('madrasah_id', madrasahId)
-        else query = query.eq('id', madrasahId)
-        const { data, error } = await query
-        if (error) throw error
-        backup[table] = data
+      for (const [table, rows] of Object.entries(allData)) {
+        if (table.startsWith('_')) continue
+        if (madrasahId && table !== 'madrasas') {
+          backup[table] = rows.filter((r) => r.madrasah_id === madrasahId || r.madrasah_id == null)
+        } else if (madrasahId) {
+          backup[table] = rows.filter((r) => r.id === madrasahId)
+        } else {
+          backup[table] = rows
+        }
       }
       backup._meta = { exported_at: new Date().toISOString(), madrasah_id: madrasahId }
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
@@ -46,14 +48,26 @@ export default function BackupRestore() {
     if (!file) return
     setImporting(true)
     const reader = new FileReader()
-    reader.onload = async () => {
+    reader.onload = () => {
       try {
         const data = JSON.parse(reader.result)
-        toast(
-          'Fitur restore memerlukan peninjauan manual sebelum ditulis ke database untuk mencegah duplikasi/konflik data. ' +
-            `File berisi ${Object.keys(data).filter((k) => k !== '_meta').length} tabel. Hubungi tim teknis untuk proses restore penuh.`,
-          { duration: 6000 }
-        )
+        const tables = Object.keys(data).filter((k) => !k.startsWith('_'))
+        // Merge imported data into existing store
+        const existing = store.exportAll()
+        for (const table of tables) {
+          if (!existing[table]) existing[table] = []
+          for (const row of data[table]) {
+            const idx = existing[table].findIndex((r) => r.id === row.id)
+            if (idx >= 0) {
+              existing[table][idx] = { ...existing[table][idx], ...row }
+            } else {
+              existing[table].push(row)
+            }
+          }
+        }
+        store.importAll(existing)
+        toast.success(`Restore berhasil: ${tables.length} tabel diimpor. Halaman akan dimuat ulang.`)
+        setTimeout(() => window.location.reload(), 2000)
       } catch {
         toast.error('File backup tidak valid')
       } finally {
@@ -86,14 +100,18 @@ export default function BackupRestore() {
           <Upload className="mb-2 text-accent-500" size={24} />
           <p className="text-sm font-semibold text-gray-800">Restore Data</p>
           <p className="mt-1 text-xs text-gray-500">
-            Unggah file backup JSON untuk ditinjau. Proses restore penuh ke database memerlukan verifikasi tim teknis untuk mencegah
-            duplikasi/konflik data.
+            Unggah file backup JSON untuk memulihkan data. Data yang sudah ada akan digabung (merge), bukan ditimpa.
           </p>
           <label className="mt-4 flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
             <Upload size={16} /> {importing ? 'Memproses...' : 'Pilih File Backup'}
             <input type="file" accept=".json" onChange={handleImport} className="hidden" disabled={importing} />
           </label>
         </div>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+        <p className="font-semibold">Catatan:</p>
+        <p>Data disimpan di browser (localStorage). Clear cache/mengganti browser akan menghapus data. Backup rutin disarankan.</p>
       </div>
     </div>
   )

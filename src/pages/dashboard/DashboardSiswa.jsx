@@ -1,32 +1,30 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ClipboardList, CheckCircle2, Clock } from 'lucide-react'
-import { supabase } from '../../lib/supabaseClient'
+import { store } from '../../lib/store'
 import { useAuth } from '../../context/AuthContext'
 import PageHeader from '../../components/PageHeader'
 import EmptyState from '../../components/EmptyState'
 
 export default function DashboardSiswa() {
-  const { user } = useAuth()
+  const { profile } = useAuth()
   const [assignments, setAssignments] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const fetchAssignments = async () => {
-      setLoading(true)
-      const { data: student } = await supabase.from('students').select('id').eq('profile_id', user.id).single()
-      if (student) {
-        const { data } = await supabase
-          .from('assessment_assignments')
-          .select('*, instrument:instruments(title, category), period:assessment_periods(name)')
-          .eq('student_id', student.id)
-          .order('assigned_at', { ascending: false })
-        setAssignments(data || [])
-      }
-      setLoading(false)
-    }
-    if (user?.id) fetchAssignments()
-  }, [user])
+    if (!profile?.student_id) { setLoading(false); return }
+    setLoading(true)
+    const allAssignments = store.query('assessment_assignments', { student_id: profile.student_id })
+    // Enrich
+    const enriched = allAssignments.map((a) => {
+      const instrument = store.getById('instruments', a.instrument_id)
+      const period = store.getById('assessment_periods', a.period_id)
+      return { ...a, instrument, period }
+    })
+    enriched.sort((a, b) => new Date(b.assigned_at || 0) - new Date(a.assigned_at || 0))
+    setAssignments(enriched)
+    setLoading(false)
+  }, [profile])
 
   const statusBadge = (status) => {
     const map = {
@@ -61,7 +59,7 @@ export default function DashboardSiswa() {
                 <div className="mt-1">{statusBadge(a.status)}</div>
               </div>
               {a.status !== 'completed' ? (
-                <Link to={`/asesmen/kerjakan/${a.id}`} className="rounded-lg bg-primary-800 px-3 py-2 text-xs font-semibold text-white hover:bg-primary-900">
+                <Link to={`/asesmen/${a.id}`} className="rounded-lg bg-primary-800 px-3 py-2 text-xs font-semibold text-white hover:bg-primary-900">
                   Kerjakan
                 </Link>
               ) : (

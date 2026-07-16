@@ -1,7 +1,8 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import QRCode from 'qrcode'
-import { APP_NAME, ORGANIZER_NAME } from './supabaseClient'
+const APP_NAME = 'SiDIAG Madrasah'
+const ORGANIZER_NAME = ''
 
 /**
  * Membuat laporan hasil asesmen siswa dalam format PDF, lengkap dengan

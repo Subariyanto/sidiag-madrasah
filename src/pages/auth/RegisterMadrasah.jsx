@@ -4,6 +4,7 @@ import { ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../../lib/supabaseClient'
 import { useAuth } from '../../context/AuthContext'
+import { saveRegisteredUser } from '../../lib/codes'
 
 export default function RegisterMadrasah() {
   const [form, setForm] = useState({
@@ -11,20 +12,20 @@ export default function RegisterMadrasah() {
     npsn: '',
     address: '',
     adminName: '',
-    email: '',
+    username: '',
     password: '',
     confirmPassword: '',
   })
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
-  const { signUp } = useAuth()
+  const { registerUser } = useAuth()
   const navigate = useNavigate()
 
   const onChange = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }))
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.madrasahName || !form.adminName || !form.email || !form.password) {
+    if (!form.madrasahName || !form.adminName || !form.username || !form.password) {
       toast.error('Lengkapi semua kolom wajib')
       return
     }
@@ -38,35 +39,30 @@ export default function RegisterMadrasah() {
     }
     setLoading(true)
     try {
-      const authData = await signUp({
-        email: form.email,
+      // Insert madrasah via shim → store
+      const { data: madrasah, error: madrasahError } = await supabase
+        .from('madrasas')
+        .insert({
+          name: form.madrasahName,
+          npsn: form.npsn || null,
+          address: form.address || null,
+          status: 'active',
+        })
+        .select()
+        .single()
+
+      if (madrasahError) throw madrasahError
+
+      // Register admin user
+      await registerUser({
+        username: form.username,
+        nama: form.adminName,
         password: form.password,
-        fullName: form.adminName,
         role: 'admin_madrasah',
+        madrasah_id: madrasah.id,
       })
 
-      const userId = authData?.user?.id
-      if (userId) {
-        const { data: madrasah, error: madrasahError } = await supabase
-          .from('madrasas')
-          .insert({
-            name: form.madrasahName,
-            npsn: form.npsn || null,
-            address: form.address || null,
-            status: 'pending_verification',
-          })
-          .select()
-          .single()
-
-        if (madrasahError) throw madrasahError
-
-        await supabase
-          .from('profiles')
-          .update({ full_name: form.adminName, role: 'admin_madrasah', madrasah_id: madrasah.id })
-          .eq('id', userId)
-      }
-
-      toast.success('Registrasi berhasil. Silakan cek email untuk verifikasi lalu login.')
+      toast.success('Registrasi berhasil! Silakan login.')
       navigate('/login')
     } catch (err) {
       toast.error(err.message || 'Registrasi gagal')
@@ -84,7 +80,7 @@ export default function RegisterMadrasah() {
         </Link>
         <h1 className="text-lg font-bold text-primary-900">Registrasi Madrasah</h1>
         <p className="mb-6 mt-1 text-sm text-gray-500">
-          Daftarkan madrasah Anda untuk mulai menggunakan SiDIAG Madrasah. Akun akan diverifikasi oleh Super Admin.
+          Daftarkan madrasah Anda untuk mulai menggunakan SiDIAG Madrasah.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -126,12 +122,11 @@ export default function RegisterMadrasah() {
               />
             </div>
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-gray-700">Email *</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Username *</label>
               <input
-                type="email"
-                value={form.email}
-                onChange={onChange('email')}
-                placeholder="admin@madrasah.sch.id"
+                value={form.username}
+                onChange={onChange('username')}
+                placeholder="username login admin"
                 className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-100"
               />
             </div>

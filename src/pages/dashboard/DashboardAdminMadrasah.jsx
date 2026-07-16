@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Users, GraduationCap, BookOpen, ClipboardList } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { supabase } from '../../lib/supabaseClient'
+import { store } from '../../lib/store'
 import { useAuth } from '../../context/AuthContext'
 import StatCard from '../../components/StatCard'
 import PageHeader from '../../components/PageHeader'
@@ -14,46 +14,39 @@ export default function DashboardAdminMadrasah() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!madrasahId) return
-    const fetchStats = async () => {
-      setLoading(true)
-      const [teachersRes, studentsRes, classesRes, periodsRes, studentsPerClassRes] = await Promise.all([
-        supabase.from('teachers').select('id', { count: 'exact', head: true }).eq('madrasah_id', madrasahId).eq('is_active', true),
-        supabase.from('students').select('id', { count: 'exact', head: true }).eq('madrasah_id', madrasahId).eq('status', 'active'),
-        supabase.from('classes').select('id', { count: 'exact', head: true }).eq('madrasah_id', madrasahId).eq('is_active', true),
-        supabase.from('assessment_periods').select('id', { count: 'exact', head: true }).eq('madrasah_id', madrasahId).eq('status', 'active'),
-        supabase.from('students').select('class_id, classes(name)').eq('madrasah_id', madrasahId).eq('status', 'active'),
-      ])
+    if (!madrasahId) { setLoading(false); return }
+    setLoading(true)
+    const teachers = store.query('teachers', { is_active: true, madrasah_id: madrasahId })
+    const students = store.query('students', { status: 'active', madrasah_id: madrasahId })
+    const classes = store.query('classes', { is_active: true, madrasah_id: madrasahId })
+    const periods = store.query('assessment_periods', { is_active: true, madrasah_id: madrasahId })
 
-      setStats({
-        teachers: teachersRes.count || 0,
-        students: studentsRes.count || 0,
-        classes: classesRes.count || 0,
-        periods: periodsRes.count || 0,
-      })
+    setStats({
+      teachers: teachers.length,
+      students: students.length,
+      classes: classes.length,
+      periods: periods.length,
+    })
 
-      if (studentsPerClassRes.data) {
-        const grouped = {}
-        studentsPerClassRes.data.forEach((row) => {
-          const name = row.classes?.name || 'Belum Ada Kelas'
-          grouped[name] = (grouped[name] || 0) + 1
-        })
-        setClassChart(Object.entries(grouped).map(([name, jumlah]) => ({ name, jumlah })))
-      }
-      setLoading(false)
-    }
-    fetchStats()
+    const grouped = {}
+    students.forEach((s) => {
+      const cls = classes.find((c) => c.id === s.class_id)
+      const name = cls?.name || 'Belum Ada Kelas'
+      grouped[name] = (grouped[name] || 0) + 1
+    })
+    setClassChart(Object.entries(grouped).map(([name, jumlah]) => ({ name, jumlah })))
+    setLoading(false)
   }, [madrasahId])
 
   return (
     <div>
-      <PageHeader title="Dashboard Admin Madrasah" description="Ringkasan data madrasah Anda." />
+      <PageHeader title="Dashboard Madrasah" description="Ringkasan data madrasah Anda." />
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard icon={Users} label="Total Guru" value={loading ? '...' : stats.teachers} color="primary" />
         <StatCard icon={GraduationCap} label="Total Siswa" value={loading ? '...' : stats.students} color="secondary" />
         <StatCard icon={BookOpen} label="Total Kelas" value={loading ? '...' : stats.classes} color="accent" />
-        <StatCard icon={ClipboardList} label="Periode Asesmen Aktif" value={loading ? '...' : stats.periods} color="gray" />
+        <StatCard icon={ClipboardList} label="Periode Asesmen" value={loading ? '...' : stats.periods} color="gray" />
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-4">

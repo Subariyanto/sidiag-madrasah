@@ -2,7 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 export default function ProtectedRoute({ allowedRoles, children }) {
-  const { isAuthenticated, loading, role } = useAuth()
+  const { user, loading, role } = useAuth()
   const location = useLocation()
 
   if (loading) {
@@ -16,7 +16,7 @@ export default function ProtectedRoute({ allowedRoles, children }) {
     )
   }
 
-  if (!isAuthenticated) {
+  if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
