@@ -28,10 +28,10 @@ export default function ActivationPage() {
   const { registerUser } = useAuth()
   const navigate = useNavigate()
 
-  const handleValidateCode = (e) => {
+  const handleValidateCode = async (e) => {
     e.preventDefault()
     if (!code.trim()) return toast.error('Kode aktivasi wajib diisi')
-    const info = validateCode(code)
+    const info = await validateCode(code)
     if (!info.valid) return toast.error('Kode aktivasi tidak valid')
     setCodeInfo(info)
     setStep(2)

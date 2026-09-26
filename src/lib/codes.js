@@ -1,9 +1,11 @@
 /**
  * Activation code & license system for SiDIAG Madrasah.
- * localStorage-based, no server needed.
+ * localStorage-based, no server needed for data.
+ *
+ * Kode master/admin TIDAK lagi disimpan di sini; diverifikasi di server
+ * Pusat Lisensi via RPC verify_master_code (bisa dicabut/diganti server-side).
  *
  * Code format (validated by prefix, works across devices):
- *   SIDIAG-POKJAWAS-JEMBER-2026  → admin (master)
  *   MADRASAH-XXXX                → madrasah registration
  *   SISWA-XXXX                   → siswa registration
  *   SIDIAG-PRO-2026              → madrasah (legacy)
@@ -13,7 +15,28 @@
 const STORAGE_KEY = 'sidiag_license_v1'
 const USERS_KEY = 'sidiag_registered_users_v1'
 
-export const MASTER_CODE = 'SIDIAG-POKJAWAS-JEMBER-2026'
+// === PUSAT LISENSI APLIKASI (verifikasi master code terpusat) ===
+const PUSAT_URL = 'https://llaukzsztguwrtwdubpm.supabase.co'
+const PUSAT_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsYXVrenN6dGd1d3J0d2R1YnBtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxOTI1NDgsImV4cCI6MjEwMjc2ODU0OH0.DqKtA0aus9nOLViMEWjAPvYIAdLS_EKU3H8dYKe_Zhk'
+
+/** Verifikasi master/admin code ke server Pusat Lisensi. */
+export async function verifyMasterCode(code) {
+  try {
+    const r = await fetch(PUSAT_URL.replace(/\/$/, '') + '/rest/v1/rpc/verify_master_code', {
+      method: 'POST',
+      headers: {
+        apikey: PUSAT_ANON_KEY,
+        Authorization: 'Bearer ' + PUSAT_ANON_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_app_slug: 'sidiag-madrasah', p_code: String(code || '').trim() }),
+    })
+    if (!r.ok) return { valid: false, reason: 'network' }
+    return await r.json()
+  } catch {
+    return { valid: false, reason: 'network' }
+  }
+}
 
 /** Bundled activation codes. */
 export const BUNDLED_CODES = [
@@ -42,14 +65,9 @@ export const BUNDLED_CODES = [
   { code: 'SIDIAG-DEMO-2026', tier: 'demo', role: 'madrasah', label: 'Demo 5 Hari (Legacy)' },
 ]
 
-/** Validate an activation code. Returns { valid, tier, role, label } or { valid: false }. */
-export function validateCode(code) {
+/** Validate an activation code. Returns a Promise of { valid, tier, role, label } or { valid: false }. */
+export async function validateCode(code) {
   const c = (code || '').trim().toUpperCase()
-
-  // Master code → admin
-  if (c === MASTER_CODE.toUpperCase()) {
-    return { valid: true, tier: 'pro', role: 'admin', label: 'Admin (Super Admin)' }
-  }
 
   // Madrasah code format: MADRASAH-XXXX
   if (c.startsWith('MADRASAH-') && c.length >= 10) {
@@ -61,9 +79,17 @@ export function validateCode(code) {
     return { valid: true, tier: 'pro', role: 'siswa', label: 'Kode Siswa' }
   }
 
-  // Legacy codes
+  // Legacy / bundled codes
   const found = BUNDLED_CODES.find((b) => b.code.toUpperCase() === c)
   if (found) return { valid: true, tier: found.tier, role: found.role, label: found.label }
+
+  // Master code → diverifikasi server (kode asli tidak ada di file ini)
+  if (c) {
+    const mv = await verifyMasterCode(c)
+    if (mv && mv.valid) {
+      return { valid: true, tier: mv.tier || 'pro', role: mv.role || 'admin', label: 'Admin (Super Admin)', master: true }
+    }
+  }
 
   return { valid: false }
 }
